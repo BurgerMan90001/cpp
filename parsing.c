@@ -34,8 +34,6 @@ void add_history(char* unused) {}
 #endif
 
 
-
-
 int main(int argc, char** argv) {
 	// Parsers
 	mpc_parser_t* Number = mpc_new("number");
@@ -47,7 +45,7 @@ int main(int argc, char** argv) {
 	mpca_lang(MPCA_LANG_DEFAULT,
 		"                                                   \
 		number   : /-?[0-9]+/;                             \
-		operator : '+' | '-' | '*' | '/' | '%'              \
+		operator : '+' | '-' | '*' | '/' | x`             \
 		| \"add\" | \"sub\" | \"mul\" | \"div\";            \
 		expr     : <number> | '(' <operator> <expr>+ ')' ;  \
 		lispy    : /^/ <operator> <expr>+ /$/ ;             \
