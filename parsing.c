@@ -35,6 +35,18 @@ void add_history(char* unused) {}
 
 // counts the number of nodes in a tree
 int number_of_nodes(mpc_ast_t* t) {
+	// base case no children
+	if (t->children_num == 0) {
+		return 1;
+	}
+	if (t->children_num >= 1) {
+		int total = 1;
+		for (int i = 0; i < t->children_num; i++) {
+			total = total + number_of_nodes(t->children[i]);
+		}
+		return total;
+	}
+	return 0;
 }
 
 int main(int argc, char** argv) {
