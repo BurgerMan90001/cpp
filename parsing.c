@@ -33,6 +33,9 @@ void add_history(char* unused) {}
 #include <editline/history.h>
 #endif
 
+// counts the number of nodes in a tree
+int number_of_nodes(mpc_ast_t* t) {
+}
 
 int main(int argc, char** argv) {
 	// Parsers
