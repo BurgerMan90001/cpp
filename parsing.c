@@ -147,8 +147,7 @@ void lval_del(lval* v) {
 			free(v->cell);
 			break;
 	}
-	
-	
+	free(v);
 }
 // counts the number of nodes in a tree
 int number_of_nodes(mpc_ast_t* tree) {
