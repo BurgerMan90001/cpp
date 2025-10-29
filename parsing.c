@@ -6,6 +6,7 @@ windows: cc -std=c99 -Wall parsing.c mpc.c -o parsing
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "mpc.h"
 
@@ -33,6 +34,73 @@ void add_history(char* unused) {}
 #include <editline/history.h>
 #endif
 
+// lisp value
+typedef struct lval {
+	int type;
+	long num;
+	// Error and symbol type string data
+	char* err;
+	char* sym;
+	// a list of lval pointers with its count
+	int count;
+	struct lval** cell;
+} lval;
+
+// lisp value types
+enum {
+	LVAL_ERR,
+	LVAL_NUM,
+	LVAL_SYM,
+	LVAL_SEXPR
+};
+// lisp value error types
+enum {
+	LERR_DIV_ZERO,
+	LERR_BAD_OP,
+	LERR_BAD_NUM
+};
+/*
+lval num type constructor
+converts long to lval number
+*/
+lval lval_num(long x) {
+	lval v;
+	v.type = LVAL_NUM;
+	v.num = x;
+	return v;
+}
+/*
+lval error type constructor
+int long to lval error
+*/
+lval lval_err(int x) {
+	lval v;
+	v.type = LVAL_ERR;
+	v.err = x;
+	return v;
+}
+// prints value or error of lisp value
+void lval_print(lval v) {
+	switch (v.type) {
+		case LVAL_NUM:
+			printf("%li\n", v.num);
+			break;
+		case LVAL_ERR:
+			if (v.err == LERR_BAD_NUM) {
+				printf("Error: Invalid number");
+			} else if (v.err == LERR_BAD_OP) {
+				printf("Error: Invalid operator");
+			} else if (v.err == LERR_DIV_ZERO) {
+				printf("Error: Division by zero");
+			}
+			break;
+	}
+}
+// print lisp value with newline
+void lval_println(lval v) {
+	lval_print(v);
+	putchar('\n');
+}
 // counts the number of nodes in a tree
 int number_of_nodes(mpc_ast_t* tree) {
 	// base case no children
@@ -48,26 +116,58 @@ int number_of_nodes(mpc_ast_t* tree) {
 	}
 	return 0;
 }
-long eval_op(long x, char* operator, long y) {
-	// strcmp checks for string equality
-	if (strcmp(operator, "+") == 0) { return x + y; }
-	if (strcmp(operator, "-") == 0) { return x - y; }
-	if (strcmp(operator, "*") == 0) { return x * y; }
-	if (strcmp(operator, "/") == 0) { return x / y; }
-	return 0;
+bool isAddition(char* operator) {
+	return strcmp(operator, "+") == 0 || strcmp(operator, "add") == 0;
 }
-long eval(mpc_ast_t* tree) {
+bool isSubtraction(char* operator) {
+	return strcmp(operator, "-") == 0 || strcmp(operator, "sub") == 0;
+}
+bool isMultiplication(char* operator) {
+	return strcmp(operator, "*") == 0 || strcmp(operator, "mul") == 0;
+}
+bool isDivision(char* operator) {
+	return strcmp(operator, "/") == 0 || strcmp(operator, "div") == 0;
+}
+lval eval_op(lval x, char* operator, lval y) {
+	// If either value is an error return it
+	if (x.type == LVAL_ERR) { return x; }
+	if (y.type == LVAL_ERR) { return y; }
+	
+	// strcmp checks for string equality
+	if (isAddition(operator)) { return lval_num(x.num + y.num ); }
+	if (isSubtraction(operator)) { return lval_num(x.num  - y.num ); }
+	if (isMultiplication(operator)) { return lval_num(x.num  * y.num ); }
+	if (isDivision(operator)) { 
+		// if denominator is 0
+		if (y.num == 0) {
+			// return a division by zero error
+			return lval_err(LERR_DIV_ZERO);
+		}
+		return lval_num(x.num  / y.num);
+	}
+	return lval_err(LERR_BAD_OP);
+}
+
+lval eval(mpc_ast_t* tree) {
 	// If tagged as a number, return it
 	if (strstr(tree->tag, "number")) {
-		// atoi is char to int
-		return atoi(tree->contents);
+		lval v;
+		errno = 0;
+		long x = strtol(tree->contents, NULL, 10);
+		// If theres not an error in conversion
+		if (errno != ERANGE) {
+			v = lval_num(x);
+		} else {
+			v = lval_err(LERR_BAD_NUM);
+		}
+		return v;
 	}
 	
 	// Second child is the operator
 	char* operator = tree->children[1]->contents;
 	
 	// Third child is x
-	long x = eval(tree->children[2]);
+	lval x = eval(tree->children[2]);
 	// Rest of the children are iterated
 	int i = 3;
 	while(strstr(tree->children[i]->tag, "expr")) {
@@ -80,7 +180,8 @@ long eval(mpc_ast_t* tree) {
 int main(int argc, char** argv) {
 	// Parsers
 	mpc_parser_t* Number = mpc_new("number");
-	mpc_parser_t* Operator = mpc_new("operator");
+	mpc_parser_t* Symbol = mpc_new("symbol");
+	mpc_parser_t* Sexpr = mpc_new("sexpr")
 	mpc_parser_t* Expr = mpc_new("expr");
 	mpc_parser_t* Lispy = mpc_new("lispy");
 
@@ -88,7 +189,8 @@ int main(int argc, char** argv) {
 	mpca_lang(MPCA_LANG_DEFAULT,
 		"                                                   \
 		number   : /-?[0-9]+/;                             \
-		operator : '+' | '-' | '*' | '/' ;                 \
+		operator : '+' | '-' | '*' | '/'                    \
+		| \"add\" | \"sub\" | \"mul\" | \"div\" ;           \
 		expr     : <number> | '(' <operator> <expr>+ ')' ;  \
 		lispy    : /^/ <operator> <expr>+ /$/ ;             \
 	  ",
@@ -109,12 +211,8 @@ int main(int argc, char** argv) {
 		// If parsing sucessful
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
 			
-			long result = eval(r.output);
-			
-			printf("%li\n", result);
-			
-			// Print the AST
-			//mpc_ast_print(r.output);
+			lval result = eval(r.output);
+			lval_println(result);
 			mpc_ast_delete(r.output);
 		} else {
 			// Else, print error
@@ -124,7 +222,7 @@ int main(int argc, char** argv) {
 	}
 	
 	/* Undefine and Delete our Parsers */
-	mpc_cleanup(4, Number, Operator, Expr, Lispy);
+	mpc_cleanup(5, Number, Symbol, Sexpr, Expr, Lispy);
 
 	return 0;
 }
