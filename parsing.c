@@ -34,18 +34,6 @@ void add_history(char* unused) {}
 #include <editline/history.h>
 #endif
 
-// lisp value
-typedef struct lval {
-	int type;
-	long num;
-	// Error and symbol type string data
-	char* err;
-	char* sym;
-	// a list of lval pointers with its count
-	int count;
-	struct lval** cell;
-} lval;
-
 // lisp value types
 enum {
 	LVAL_ERR,
@@ -59,24 +47,61 @@ enum {
 	LERR_BAD_OP,
 	LERR_BAD_NUM
 };
+// lisp value
+typedef struct lval {
+	int type;
+	long num;
+	// Error and symbol type string data
+	char* err;
+	char* sym;
+	// a list of lval pointers with its count
+	int count;
+	struct lval** cell;
+} lval;
 /*
-lval num type constructor
-converts long to lval number
+Constructor for number lval pointer.
+Converts long to lval number
 */
-lval lval_num(long x) {
-	lval v;
-	v.type = LVAL_NUM;
-	v.num = x;
+lval* lval_num(long x) {
+	lval* v = malloc(sizeof(lval));
+	v->type = LVAL_NUM;
+	v->num = x;
 	return v;
 }
 /*
-lval error type constructor
-int long to lval error
+Constructor for error lval pointer
+Converts int long to lval error
 */
-lval lval_err(int x) {
-	lval v;
-	v.type = LVAL_ERR;
-	v.err = x;
+lval* lval_err(char* m) {
+	// Alocate memory for lval pointer
+	lval v = malloc(sizeof(lval));
+	v->type = LVAL_ERR;
+	// Allocate strlen + 1 for null terminator
+	v->err = malloc(strlen(m) + 1);
+	return v;
+}
+/*
+Constructor for symbol lval pointer
+Converts a string symbol to a lval symbol
+*/
+lval* lval_sym(char* s) {
+	// Alocate memory for lval pointer
+	lval* v = malloc(sizeof(lval));
+	v->type = LVAL+_SYM;
+	v->sym = malloc(strlen(s) + 1);
+	// Copies string s to allocated v->sym
+	strcpy(v->sym, s);
+	return v;
+}
+
+/*
+Constructor for symbol lval pointer
+*/
+lval* lval_sexpr(void) {
+	lval* v = malloc(sizeof(lval));
+	v->type = LVAL_SEXPR;
+	v->count = 0;
+	v->cell = NULL;
 	return v;
 }
 // prints value or error of lisp value
@@ -100,6 +125,30 @@ void lval_print(lval v) {
 void lval_println(lval v) {
 	lval_print(v);
 	putchar('\n');
+}
+// Free up memory from lval pointer
+void lval_del(lval* v) {
+	switch (v->type) {
+		case LVAL_NUM:
+		// Do nothing for numbers
+		break;
+		case LVAL_ERR:
+			free(v->err);
+			break;
+		case LVAL_SYM:
+			free( v->);
+			break;
+		case LVAL_SEXPR:
+			// Free all elements in s expression
+			for (int i = 0; i < v->count; i++) {
+			lval_del(v->cell[i]);
+			}
+			// And the container of the pointer
+			free(v->cell);
+			break;
+	}
+	
+	
 }
 // counts the number of nodes in a tree
 int number_of_nodes(mpc_ast_t* tree) {
