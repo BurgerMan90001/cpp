@@ -34,19 +34,47 @@ void add_history(char* unused) {}
 #endif
 
 // counts the number of nodes in a tree
-int number_of_nodes(mpc_ast_t* t) {
+int number_of_nodes(mpc_ast_t* tree) {
 	// base case no children
-	if (t->children_num == 0) {
+	if (tree->children_num == 0) {
 		return 1;
 	}
-	if (t->children_num >= 1) {
+	if (tree->children_num >= 1) {
 		int total = 1;
-		for (int i = 0; i < t->children_num; i++) {
-			total = total + number_of_nodes(t->children[i]);
+		for (int i = 0; i < tree->children_num; i++) {
+			total = total + number_of_nodes(tree->children[i]);
 		}
 		return total;
 	}
 	return 0;
+}
+long eval_op(long x, char* operator, long y) {
+	// strcmp checks for string equality
+	if (strcmp(operator, "+") == 0) { return x + y; }
+	if (strcmp(operator, "-") == 0) { return x - y; }
+	if (strcmp(operator, "*") == 0) { return x * y; }
+	if (strcmp(operator, "/") == 0) { return x / y; }
+	return 0;
+}
+long eval(mpc_ast_t* tree) {
+	// If tagged as a number, return it
+	if (strstr(tree->tag, "number")) {
+		// atoi is char to int
+		return atoi(tree->contents);
+	}
+	
+	// Second child is the operator
+	char* operator = tree->children[1]->contents;
+	
+	// Third child is x
+	long x = eval(tree->children[2]);
+	// Rest of the children are iterated
+	int i = 3;
+	while(strstr(tree->children[i]->tag, "expr")) {
+		x = eval_op(x, operator, eval(tree->children[i]));
+		i++;
+	}
+	return x;
 }
 
 int main(int argc, char** argv) {
@@ -60,8 +88,7 @@ int main(int argc, char** argv) {
 	mpca_lang(MPCA_LANG_DEFAULT,
 		"                                                   \
 		number   : /-?[0-9]+/;                             \
-		operator : '+' | '-' | '*' | '/' | x`             \
-		| \"add\" | \"sub\" | \"mul\" | \"div\";            \
+		operator : '+' | '-' | '*' | '/' ;                 \
 		expr     : <number> | '(' <operator> <expr>+ ')' ;  \
 		lispy    : /^/ <operator> <expr>+ /$/ ;             \
 	  ",
@@ -81,8 +108,13 @@ int main(int argc, char** argv) {
 		mpc_result_t r;
 		// If parsing sucessful
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
+			
+			long result = eval(r.output);
+			
+			printf("%li\n", result);
+			
 			// Print the AST
-			mpc_ast_print(r.output);
+			//mpc_ast_print(r.output);
 			mpc_ast_delete(r.output);
 		} else {
 			// Else, print error
