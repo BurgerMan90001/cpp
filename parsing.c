@@ -31,7 +31,7 @@ void add_history(char* unused) {}
 // Else, include editline headers
 #else
 #include <editline/readline.h>
-#include <editline/history.h>
+//#include <editline/history.h>
 #endif
 
 // lisp value types
@@ -105,24 +105,24 @@ lval* lval_sexpr(void) {
 	return v;
 }
 // prints value or error of lisp value
-void lval_print(lval v) {
-	switch (v.type) {
+void lval_print(lval* v) {
+	switch (v->type) {
 		case LVAL_NUM:
-			printf("%li\n", v.num);
+			printf("%li\n", v->num);
 			break;
 		case LVAL_ERR:
-			if (v.err == LERR_BAD_NUM) {
+			if (v->err == LERR_BAD_NUM) {
 				printf("Error: Invalid number");
-			} else if (v.err == LERR_BAD_OP) {
+			} else if (v->err == LERR_BAD_OP) {
 				printf("Error: Invalid operator");
-			} else if (v.err == LERR_DIV_ZERO) {
+			} else if (v->err == LERR_DIV_ZERO) {
 				printf("Error: Division by zero");
 			}
 			break;
 	}
 }
 // print lisp value with newline
-void lval_println(lval v) {
+void lval_println(lval* v) {
 	lval_print(v);
 	putchar('\n');
 }
@@ -149,6 +149,34 @@ void lval_del(lval* v) {
 	}
 	free(v);
 }
+lval* lval_read_num(mpc_ast_t* tree) {
+	lval* v;
+	errno = 0;
+	long x = strtol(tree->contents, NULL, 10);
+	// If not invalid number
+	if (errno != ERANGE) {
+		v = lval_num(x);
+	} else {
+		v = lval_err("Invalid number");
+	}
+	return v;
+}
+lval* lval_read(mpc_ast_t* tree) {
+	if (strstr(tree->tag, "number")) { return lval_read_num(tree); }
+	if (strstr(tree->tag, "symbol")) { return lval_sym(tree->contents); }
+	
+	lval* x = NULL;
+	
+	if (strcmp(tree->tag, ">") == 0) { x = lval_sexpr(); }
+	if (strstr(tree->tag, "sexpr")) { x = lval_sexpr(); }
+	
+	for (int i = 0; i < t->children_num; i++) {
+		// Skip over brackets
+		if (strcmp(t->children[i]->contents, "(")) { continue; }
+		if (strcmp(t>children[i]->contents, ")")) { continue; }
+	}	
+}
+/*
 // counts the number of nodes in a tree
 int number_of_nodes(mpc_ast_t* tree) {
 	// base case no children
@@ -164,6 +192,7 @@ int number_of_nodes(mpc_ast_t* tree) {
 	}
 	return 0;
 }
+*/
 bool isAddition(char* operator) {
 	return strcmp(operator, "+") == 0 || strcmp(operator, "add") == 0;
 }
@@ -199,7 +228,7 @@ lval eval_op(lval x, char* operator, lval y) {
 lval eval(mpc_ast_t* tree) {
 	// If tagged as a number, return it
 	if (strstr(tree->tag, "number")) {
-		lval v;
+		lval* v;
 		errno = 0;
 		long x = strtol(tree->contents, NULL, 10);
 		// If theres not an error in conversion
