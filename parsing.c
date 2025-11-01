@@ -58,6 +58,7 @@ typedef struct lval {
 	int count;
 	struct lval** cell;
 } lval;
+
 /*
 Constructor for number lval pointer.
 Converts long to lval number
@@ -74,7 +75,7 @@ Converts int long to lval error
 */
 lval* lval_err(char* m) {
 	// Alocate memory for lval pointer
-	lval v = malloc(sizeof(lval));
+	lval* v = malloc(sizeof(lval));
 	v->type = LVAL_ERR;
 	// Allocate strlen + 1 for null terminator
 	v->err = malloc(strlen(m) + 1);
@@ -87,13 +88,12 @@ Converts a string symbol to a lval symbol
 lval* lval_sym(char* s) {
 	// Alocate memory for lval pointer
 	lval* v = malloc(sizeof(lval));
-	v->type = LVAL+_SYM;
+	v->type = LVAL_SYM;
 	v->sym = malloc(strlen(s) + 1);
 	// Copies string s to allocated v->sym
 	strcpy(v->sym, s);
 	return v;
 }
-
 /*
 Constructor for symbol lval pointer
 */
@@ -104,50 +104,32 @@ lval* lval_sexpr(void) {
 	v->cell = NULL;
 	return v;
 }
-// prints value or error of lisp value
-void lval_print(lval* v) {
-	switch (v->type) {
-		case LVAL_NUM:
-			printf("%li\n", v->num);
-			break;
-		case LVAL_ERR:
-			if (v->err == LERR_BAD_NUM) {
-				printf("Error: Invalid number");
-			} else if (v->err == LERR_BAD_OP) {
-				printf("Error: Invalid operator");
-			} else if (v->err == LERR_DIV_ZERO) {
-				printf("Error: Division by zero");
-			}
-			break;
-	}
-}
-// print lisp value with newline
-void lval_println(lval* v) {
-	lval_print(v);
-	putchar('\n');
-}
 // Free up memory from lval pointer
 void lval_del(lval* v) {
 	switch (v->type) {
-		case LVAL_NUM:
 		// Do nothing for numbers
-		break;
-		case LVAL_ERR:
-			free(v->err);
-			break;
-		case LVAL_SYM:
-			free( v->);
-			break;
+		case LVAL_NUM: break;
+		case LVAL_ERR: free(v->err); break;
+		case LVAL_SYM: free(v->sym); break;
 		case LVAL_SEXPR:
 			// Free all elements in s expression
 			for (int i = 0; i < v->count; i++) {
-			lval_del(v->cell[i]);
+				lval_del(v->cell[i]);
 			}
 			// And the container of the pointer
 			free(v->cell);
 			break;
 	}
 	free(v);
+}
+
+// Adds an lval element to a cell
+lval* lval_add(lval* v, lval* x) {
+	v->count++;
+	// Allocate extra space for new lval.
+	v->cell = realloc(v->cell, sizeof(lval*) * v->count);
+	v->cell[v->count-1] = x;
+	return v;
 }
 lval* lval_read_num(mpc_ast_t* tree) {
 	lval* v;
@@ -157,7 +139,7 @@ lval* lval_read_num(mpc_ast_t* tree) {
 	if (errno != ERANGE) {
 		v = lval_num(x);
 	} else {
-		v = lval_err("Invalid number");
+		v = lval_err("invalid number");
 	}
 	return v;
 }
@@ -165,17 +147,54 @@ lval* lval_read(mpc_ast_t* tree) {
 	if (strstr(tree->tag, "number")) { return lval_read_num(tree); }
 	if (strstr(tree->tag, "symbol")) { return lval_sym(tree->contents); }
 	
+	// If root (>) or sexpr then create empty list
 	lval* x = NULL;
-	
 	if (strcmp(tree->tag, ">") == 0) { x = lval_sexpr(); }
 	if (strstr(tree->tag, "sexpr")) { x = lval_sexpr(); }
 	
-	for (int i = 0; i < t->children_num; i++) {
-		// Skip over brackets
-		if (strcmp(t->children[i]->contents, "(")) { continue; }
-		if (strcmp(t>children[i]->contents, ")")) { continue; }
-	}	
+	// Fill list with any valid expression contained within
+	for (int i = 0; i < tree->children_num; i++) {
+		if (strcmp(tree->children[i]->contents, "(") == 0) { continue; }
+		if (strcmp(tree->children[i]->contents, ")") == 0) { continue; }
+		if (strcmp(tree->children[i]->tag, "regex") == 0) { continue; }
+		x = lval_add(x, lval_read(tree->children[i]));
+	}
+	return x;
 }
+
+// Forward declarations
+void lval_print(lval* v);
+
+void lval_expr_print(lval* v, char open, char close) {
+	putchar(open);
+	//printf("%d", v->count);
+	for (int i = 0; i < v->count; i++) {
+		// Print value inside
+		lval_print(v->cell[i]);
+		// Put whitespace for all except for last element
+		if (i != (v->count-1)) {
+			putchar(' ');
+		}
+	}
+	putchar(close);
+}
+
+
+// print lisp value with newline
+void lval_println(lval* v) {
+	lval_print(v);
+	putchar('\n');
+}
+// prints value or error of lisp value
+void lval_print(lval* v) {
+	switch (v->type) {
+		case LVAL_NUM: printf("%li", v->num); break;
+		case LVAL_ERR: printf("Error: %s", v->err); break;
+		case LVAL_SYM: printf("%s", v->sym); break;
+		case LVAL_SEXPR: lval_expr_print(v, '(', ')'); break;
+	}
+}
+
 /*
 // counts the number of nodes in a tree
 int number_of_nodes(mpc_ast_t* tree) {
@@ -205,7 +224,8 @@ bool isMultiplication(char* operator) {
 bool isDivision(char* operator) {
 	return strcmp(operator, "/") == 0 || strcmp(operator, "div") == 0;
 }
-lval eval_op(lval x, char* operator, lval y) {
+/*
+lval eval_op(lval x, char* operator, lval* y) {
 	// If either value is an error return it
 	if (x.type == LVAL_ERR) { return x; }
 	if (y.type == LVAL_ERR) { return y; }
@@ -224,8 +244,9 @@ lval eval_op(lval x, char* operator, lval y) {
 	}
 	return lval_err(LERR_BAD_OP);
 }
-
-lval eval(mpc_ast_t* tree) {
+*/
+/*
+lval* eval(mpc_ast_t* tree) {
 	// If tagged as a number, return it
 	if (strstr(tree->tag, "number")) {
 		lval* v;
@@ -253,12 +274,12 @@ lval eval(mpc_ast_t* tree) {
 	}
 	return x;
 }
-
+*/
 int main(int argc, char** argv) {
 	// Parsers
 	mpc_parser_t* Number = mpc_new("number");
 	mpc_parser_t* Symbol = mpc_new("symbol");
-	mpc_parser_t* Sexpr = mpc_new("sexpr")
+	mpc_parser_t* Sexpr = mpc_new("sexpr");
 	mpc_parser_t* Expr = mpc_new("expr");
 	mpc_parser_t* Lispy = mpc_new("lispy");
 
@@ -266,13 +287,13 @@ int main(int argc, char** argv) {
 	mpca_lang(MPCA_LANG_DEFAULT,
 		"                                                   \
 		number   : /-?[0-9]+/;                             \
-		operator : '+' | '-' | '*' | '/'                    \
-		| \"add\" | \"sub\" | \"mul\" | \"div\" ;           \
-		expr     : <number> | '(' <operator> <expr>+ ')' ;  \
-		lispy    : /^/ <operator> <expr>+ /$/ ;             \
+		symbol : '+' | '-' | '*' | '/';                \
+		sexpr : '(' <expr>* ')';                    \
+		expr     : <number> | <symbol> | <sexpr> ;  \
+		lispy    : /^/ <expr>+ /$/ ;             \
 	  ",
-	  Number, Operator, Expr, Lispy);
-	
+	  Number, Symbol, Sexpr, Expr, Lispy);
+	// | \"add\" | \"sub\" | \"mul\" | \"div\" ;           
 	puts("Lispy Version 0.0.1");
 	puts("Press Ctrl+c to Exit\n");
 	
@@ -285,16 +306,24 @@ int main(int argc, char** argv) {
 		
 		// Try to parse user input
 		mpc_result_t r;
+		
 		// If parsing sucessful
+		
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
 			
-			lval result = eval(r.output);
-			lval_println(result);
-			mpc_ast_delete(r.output);
+			//lval* x = lval_read(r.output);
+			lval* x = lval_read(r.output);
+			lval_println(x);
+			lval_del(x);
+			//lval_println(x);
+			//lval_del(x);
+			//lval result = eval(r.output);
+			//lval_println(result);
+			//mpc_ast_delete(r.output);
 		} else {
 			// Else, print error
-			mpc_err_print(r.error);
-			mpc_err_delete(r.error);
+			//mpc_err_print(r.error);
+			//mpc_err_delete(r.error);
 		}
 	}
 	
